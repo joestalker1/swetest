@@ -124,26 +124,6 @@ object Base {
   def toHexString(bytes: Array[Byte]): String =
     "0x" + bytes.map(b => String.format("%02X", Byte.box(b))).mkString("")
 
-  def longToByteArray(value: Long) = {
-    //long takes 64 bits
-    val bt1: Byte = (value & 0xff).toByte
-    val bt2: Byte = ((value >> 0xff) & 0xff).toByte
-    val bt3 = ((value >> 0xffff) & 0xff).toByte
-    val bt4 = ((value >> 0xffffff) & 0xff).toByte
-    val bt5 = ((value >> 0xffffffff) & 0xff).toByte
-    val bt6 = ((value >> 0xffffffffffl) & 0xff).toByte
-    val bt7 = ((value >> 0xffffffffffffl) & 0xff).toByte
-    val bt8 = ((value >> 0xffffffffffffffl) & 0xff).toByte
-    Array[Byte](bt8, bt7, bt6, bt5, bt4, bt3, bt2, bt1)
-  }
-
-  def intToByteArray(value: Int) = {
-    val bt1: Byte = (value & 0xff).toByte
-    val bt2: Byte = ((value >> 0xff) & 0xff).toByte
-    val bt3 = ((value >> 0xffff) & 0xff).toByte
-    val bt4 = ((value >> 0xffffff) & 0xff).toByte
-    Array[Byte](bt4, bt3, bt2, bt1)
-  }
 }
 
 
@@ -167,8 +147,12 @@ object Hash {
 // use SHA-256, which always generates a 32-byte (256-bit) value.
 object Sha256 {
   val NumberOfBytes = 32
-  //use digest only with apply
-  private val TheDigest = MessageDigest.getInstance("SHA-256")
+  //use theadlocal because TheDigest is not threadsafe and may be thr bottleneck in multithreaded env, so naive approach it
+  // has digest for every thread from pool
+  val TheDigest = new ThreadLocal[MessageDigest] {
+    override def initialValue = MessageDigest.getInstance("SHA-256")
+  }
+
 
   // We pre-compute the hash of an empty array of 32 bytes.
   // We call this the "Zero_Hash".
@@ -176,13 +160,12 @@ object Sha256 {
 
   // We use this to hash a composite structure whose constituents can be given
   // as byte arrays. We just feed everything to SHA-256.
-  //TheDigest is not thread-safe and it may be used in multithreaded env.
-  def apply(bytes: Bytes*): Hash = synchronized {
+  def apply(bytes: Bytes*): Hash = {
     for (bytes <- bytes) {
-      TheDigest.update(bytes)
+      TheDigest.get().update(bytes)
     }
 
-    val hash = TheDigest.digest()
+    val hash = TheDigest.get().digest()
     assert(hash.length == NumberOfBytes)
     Hash(hash)
   }
